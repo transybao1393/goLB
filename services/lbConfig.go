@@ -16,11 +16,11 @@ var log = NewLogrusLogger()
 var cfg Config
 
 // - TODO: Handle the case that all backends are dead.
-// - TODO: Implement retry when the backend is dead.
-// - TODO: Implement healthcheck for backends.
+// - TODO: Implement retry when the backend is dead. => notify administrators
 // - TODO: Implement auto-reload for config.json.
 // - TODO: gRPC & http/1.1 & QUIC support
-//- TODO: Log all incomming requests.
+// - TODO: Basic security (Implement SSL/TLS encryption, Apply firewall rules and access control lists, Use authentication and authorization)
+// - TODO: Implement more Load Balancing Algorithms (Least Connections, Least Time, Hash, IP Hash, Random with Two Choices,...)
 
 // Config is a configuration.
 type Config struct {

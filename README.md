@@ -1,41 +1,36 @@
-# Project Title
-
-Simple overview of use/purpose.
+# Simple Load Balancer
 
 ## Description
 
-An in-depth paragraph about your project and overview of use.
+Load Balancer written in Golang, with logrus to log every request information, active & passive backend URL check
 
 ## Getting Started
 
 ### Dependencies
 
-* Describe any prerequisites, libraries, OS version, etc., needed before installing program.
-* ex. Windows 10
+* logrus
 
 ### Installing
 
-* How/where to download your program
-* Any modifications needed to be made to files/folders
+* Clone this project
+* Run command *make build-and-run*
+* Run binary file
 
 ### Executing program
 
-* How to run the program
-* Step-by-step bullets
+* Run command in Makefile
 ```
-code blocks for commands
+make build-and-run
 ```
 
 ## Help
 
-Any advise for common problems or issues.
-```
-command to run if program contains helper info
-```
+* Create folder logfile/
+* Create config.json from example.config.json
 
 ## Authors
 
-Contributors names and contact info
+Trần Sỹ Bảo
 ...
 
 ## Version History
