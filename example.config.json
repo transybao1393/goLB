@@ -1,0 +1,31 @@
+{
+    "proxy": {
+        "port": "8080"
+    },
+    "backends": [
+        {
+            "url": "http://localhost:8081/",
+            "type": "middle",
+            "ram": "4gb",
+            "point": 2
+        },
+        {
+            "url": "http://localhost:8082/",
+            "type": "middle",
+            "ram": "4gb",
+            "point": 2
+        },
+        {
+            "url": "http://localhost:8083/",
+            "type": "middle",
+            "ram": "4gb",
+            "point": 2
+        },
+        {
+            "url": "http://localhost:8084/",
+            "type": "middle",
+            "ram": "4gb",
+            "point": 2
+        }
+    ]
+}
