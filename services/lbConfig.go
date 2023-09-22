@@ -4,16 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"load-balancer/algo"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sync"
 	"time"
 )
-
-var log = NewLogrusLogger()
-var cfg Config
 
 // - TODO: Handle the case that all backends are dead.
 // - TODO: Implement retry when the backend is dead. => notify administrators
@@ -22,46 +19,7 @@ var cfg Config
 // - TODO: Basic security (Implement SSL/TLS encryption, Apply firewall rules and access control lists, Use authentication and authorization)
 // - TODO: Implement more Load Balancing Algorithms (Least Connections, Least Time, Hash, IP Hash, Random with Two Choices,...)
 
-// Config is a configuration.
-type Config struct {
-	Proxy    Proxy     `json:"proxy"`
-	Backends []Backend `json:"backends"`
-}
-
-// Proxy is a reverse proxy, and means load balancer.
-type Proxy struct {
-	Port string `json:"port"`
-}
-
-// Backend is servers which load balancer is transferred.
-type Backend struct {
-	URL    string `json:"url"`
-	TYPE   string `json:"type"`
-	RAM    string `json:"ram"`
-	IsDead bool
-	mu     sync.RWMutex
-}
-
-// SetDead updates the value of IsDead in Backend.
-func (backend *Backend) SetDead(b bool) {
-	backend.mu.Lock()
-	backend.IsDead = b
-	backend.mu.Unlock()
-}
-
-// GetIsDead returns the value of IsDead in Backend.
-func (backend *Backend) GetIsDead() bool {
-	backend.mu.RLock()
-	isAlive := backend.IsDead
-	backend.mu.RUnlock()
-	return isAlive
-}
-
-var mu sync.Mutex
-var idx int = 0
-
-// lbHandler is a handler for loadbalancing
-func lbHandler(w http.ResponseWriter, r *http.Request) {
+func lbHandlerRRv1(w http.ResponseWriter, r *http.Request) {
 	log.WithFields(Fields{
 		"remote address": r.RemoteAddr,
 		"datetime":       time.Now().Format("2006-01-02"),
@@ -75,36 +33,102 @@ func lbHandler(w http.ResponseWriter, r *http.Request) {
 		"tls":            r.TLS,
 	}).Info("Request information")
 
-	maxLen := len(cfg.Backends)
+	//- RR version 1
+	currentBackend, targetURL, _ := algo.SelectRRv1()
 
-	//- Round Robin
-	//- FIXME: It is better to implement a better algorithm.
-	mu.Lock()
-	currentBackend := cfg.Backends[idx%maxLen]
-	if currentBackend.GetIsDead() {
-		idx++
+	//- check isAlive before serving, 1 second
+	if isAliveWithTimeLimit(targetURL, 1*time.Second) {
+		//- if alive
+		currentBackend.SetDead(false)
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
+			// - TODO: It is better to implement retry
+			log.WithFields(Fields{
+				"status":  "WARNING",
+				"server":  targetURL,
+				"message": fmt.Sprintf("Cannot establish request to %s\n", targetURL),
+			}).Info("REQUEST ESTABLISH")
+		}
+		reverseProxy.ServeHTTP(w, r)
+	} else {
+		//- if not, add to retry backends
+		currentBackend.SetDead(true)
+		log.WithFields(Fields{
+			"status":  "DEAD",
+			"server":  targetURL,
+			"message": fmt.Sprintf("Server with URL %v is DEAD.", targetURL),
+		}).Info("SERVER DEAD")
+		lbHandlerRRv1(w, r) //- retry
 	}
-	targetURL, err := url.Parse(cfg.Backends[idx%maxLen].URL)
+}
+
+func lbHandlerRRv2(w http.ResponseWriter, r *http.Request) {
+	log.WithFields(Fields{
+		"remote address": r.RemoteAddr,
+		"datetime":       time.Now().Format("2006-01-02"),
+		"method":         r.Method,
+		"request uri":    r.RequestURI,
+		"body":           r.Body,
+		"header":         r.Header,
+		"content length": r.ContentLength,
+		"host":           r.Host,
+		"proto":          r.Proto,
+		"tls":            r.TLS,
+	}).Info("Request information")
+
+	//- RR version 2
+	// mu.Lock()
+	lb := algo.NewRoundRobin()
+
+	nextBackendURL, currentBackend := lb.Select()
+	targetURL, err := url.Parse(nextBackendURL)
+	fmt.Printf("currentBackendURL %s\n", nextBackendURL)
 	if err != nil {
 		log.Fatal(err, "Backend urls parse error")
 	}
-	idx++
-	mu.Unlock()
+	// mu.Unlock()
 
-	reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-	reverseProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
-		// NOTE: It is better to implement retry.
-		log.Printf("%v is dead.", targetURL)
+	//- check isAlive before serving, 1 second
+	if isAliveWithTimeLimit(targetURL, 1*time.Second) {
+		//- if alive
+		currentBackend.SetDead(false)
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
+			// - TODO: It is better to implement retry
+			log.WithFields(Fields{
+				"status":  "WARNING",
+				"server":  targetURL,
+				"message": fmt.Sprintf("Cannot establish request to %s\n", targetURL),
+			}).Info("REQUEST ESTABLISH")
+		}
+		reverseProxy.ServeHTTP(w, r)
+	} else {
+		//- if not, add to retry backends
 		currentBackend.SetDead(true)
-		lbHandler(w, r)
+		log.WithFields(Fields{
+			"status":  "DEAD",
+			"server":  targetURL,
+			"message": fmt.Sprintf("Server with URL %v is DEAD.", targetURL),
+		}).Info("SERVER DEAD")
+		lbHandlerRRv2(w, r) //- retry
 	}
-	reverseProxy.ServeHTTP(w, r)
 }
 
 // pingBackend checks if the backend is alive.
-// - health check for every 1 minute
+// - is alive with default 1 minute
 func isAlive(url *url.URL) bool {
 	conn, err := net.DialTimeout("tcp", url.Host, time.Minute*1)
+	if err != nil {
+		log.Printf("Unreachable to %v, error: %v", url.Host, err.Error())
+		return false
+	}
+	defer conn.Close()
+	return true
+}
+
+// - is alive with time limit, maybe a few seconds
+func isAliveWithTimeLimit(url *url.URL, t time.Duration) bool {
+	conn, err := net.DialTimeout("tcp", url.Host, t)
 	if err != nil {
 		log.Printf("Unreachable to %v, error: %v", url.Host, err.Error())
 		return false
@@ -158,7 +182,7 @@ func Serve() {
 	fmt.Printf("Load Balancer is running on port %s...\n", cfg.Proxy.Port)
 	s := http.Server{
 		Addr:    ":" + cfg.Proxy.Port,
-		Handler: http.HandlerFunc(lbHandler),
+		Handler: http.HandlerFunc(lbHandlerRRv1),
 	}
 
 	if err = s.ListenAndServe(); err != nil {
