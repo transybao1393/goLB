@@ -1,4 +1,4 @@
-# Simple Load Balancer
+# Load Balancer with multiple algorithms
 
 ## Description
 
@@ -34,12 +34,18 @@ Trần Sỹ Bảo
 ...
 
 ## Version History
-
-* 0.2
-    * Various bug fixes and optimizations
-    * See [commit change]() or See [release history]()
+* 0.5
+    * Bug fix
+    * Add LVS RR
+    * Add Smooth RR
+* 0.3
+    * Bug fix
+    * Improve Round Robin algorithm
+    * Restructure algo/ folder for more algorithm implement
+    * Check isAlive for 1 second and redirect request to another alive server.
 * 0.1
-    * Initial Release
+    * Initial Release with default Round Robin
+
 
 ## License
 
